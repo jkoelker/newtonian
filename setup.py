@@ -11,7 +11,8 @@ with open(os.path.join(here, "README.rst")) as f:
 install_requires = ["cornice",
                     "PasteScript",
                     "sqlalchemy>=0.7",
-                    "pyramid_tm"]
+                    "pyramid_tm",
+                    "netaddr"]
 
 
 setup(name="newtonian",
