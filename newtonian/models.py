@@ -181,13 +181,13 @@ class MetaIp(Base):
 
 class Subnet(Base, IsHazTenant, IsHazTags):
     network_uuid = ForeignKey("networks.uuid")
+    network = orm.relationship("Network", backref="subnets")
     address = sa.Column(INET, nullable=False)
     prefix = sa.Column(sa.Integer, nullable=False)
     dns = orm.relationship("MetaIp", backref=orm.backref("subnet",
                                                          uselist=False))
     gateway = sa.Column(INET)
     unique = sa.Column(sa.Boolean, default=False)
-    network = orm.relationship("Network", backref="subnets")
 
     @property
     def netaddr(self):
@@ -202,23 +202,32 @@ class Ip(Base, IsHazTenant, IsHazTags):
     __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
 
     subnet_uuid = ForeignKey("subnets.uuid")
-    port_uuid = ForeignKey("ports.uuid", nullable=True)
     subnet = orm.relationship("Subnet", backref="ips")
+    port_uuid = ForeignKey("ports.uuid", nullable=True)
     port = orm.relationship("Port", backref="ips")
 
     address = sa.Column(INET, nullable=False)
 
 
 class MacPool(Base):
-    pass
+    network_uuid = ForeignKey("networks.uuid", nullable=True)
+    network = orm.relationship("Network", backref="mac_pools")
+    address = sa.Column(MAC, nullable=False)
+    prefix = sa.Column(sa.Integer, nullable=False)
 
 
 class Mac(Base):
-    pass
+    port_uuid = ForeignKey("ports.uuid")
+    port = orm.relationship("Port", userlist=False, backref="mac")
+
+    address = sa.Column(MAC, nullable=False)
 
 
-class Port(Base):
-    pass
+class Port(Base, IsHazTenant, IsHazTags):
+    network_uuid = ForeignKey("networks.uuid", nullable=True)
+    network = orm.relationship("Network", backref="ports")
+
+    device_id = sa.Column(sa.String(255), nullable=False)
 
 
 class Network(Base):
