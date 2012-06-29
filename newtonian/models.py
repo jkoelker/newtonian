@@ -21,24 +21,34 @@ class INET(types.TypeDecorator):
     def load_dialect_impl(self, dialect):
         if dialect.name == 'postgresql':
             return dialect.type_descriptor(postgresql.INET())
-        else:
-            return dialect.type_descriptor(types.CHAR(39))
+
+        return dialect.type_descriptor(types.CHAR(39))
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return value
-        elif dialect.name == 'postgresql':
-            return str(value)
-        else:
-            if not isinstance(value, netaddr.IPAddress):
+
+        if not isinstance(value, netaddr.IPAddress):
                 value = netaddr.IPAddress(value)
+
+        if value.version == 4:
+            value = value.ipv6()
+
+        if dialect.name == 'postgresql':
             return str(value)
+
+        return str(value)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return value
-        else:
-            return netaddr.IPAddress(value)
+
+        value = netaddr.IPAddress(value)
+
+        if value.is_ipv4_mapped():
+            return value.ipv4()
+
+        return value
 
 
 class UUID(types.TypeDecorator):
@@ -47,25 +57,25 @@ class UUID(types.TypeDecorator):
     def load_dialect_impl(self, dialect):
         if dialect.name == 'postgresql':
             return dialect.type_descriptor(postgresql.UUID())
-        else:
-            return dialect.type_descriptor(types.CHAR(36))
+
+        return dialect.type_descriptor(types.CHAR(36))
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return value
         elif dialect.name == 'postgresql':
             return str(value)
-        else:
-            if not isinstance(value, uuid.UUID):
-                return str(uuid.UUID(value))
-            else:
-                return str(value)
+
+        if not isinstance(value, uuid.UUID):
+            return str(uuid.UUID(value))
+
+        return str(value)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return value
-        else:
-            return uuid.UUID(value)
+
+        return uuid.UUID(value)
 
 
 class NewtonianBase(object):
@@ -159,6 +169,10 @@ class Subnet(Base, IsHazTenant, IsHazTags):
     @property
     def netaddr(self):
         return netaddr.IPNetwork((self.address.value, self.prefix))
+
+    @property
+    def version(self):
+        return self.address.version
 
 
 class IpAddress(Base):
