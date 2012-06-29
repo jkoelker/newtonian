@@ -7,105 +7,15 @@ import netaddr
 
 import sqlalchemy as sa
 from sqlalchemy import orm
-#from sqlalchemy import exc as sa_exc
-from sqlalchemy import types
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext import associationproxy
 from sqlalchemy.ext import declarative
-#from sqlalchemy.orm import collections
 
-
-class INET(types.TypeDecorator):
-    impl = types.CHAR
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(postgresql.INET())
-
-        return dialect.type_descriptor(types.CHAR(39))
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-
-        if not isinstance(value, netaddr.IPAddress):
-                value = netaddr.IPAddress(value)
-
-        if value.version == 4:
-            value = value.ipv6()
-
-        return str(value)
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return value
-
-        value = netaddr.IPAddress(value)
-
-        if value.is_ipv4_mapped():
-            return value.ipv4()
-
-        return value
-
-
-class MAC(types.TypeDecorator):
-    impl = types.CHAR
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(postgresql.MACADDR())
-
-        return dialect.type_descriptor(types.CHAR(16))
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-
-        if not isinstance(value, netaddr.EUI):
-                value = netaddr.EUI(value)
-
-        value.dialect = netaddr.mac_unix
-        return str(value)
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return value
-
-        value = netaddr.EUI(value)
-        value.dialect = netaddr.mac_unix
-
-        return value
-
-
-class UUID(types.TypeDecorator):
-    impl = types.CHAR
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(postgresql.UUID())
-
-        return dialect.type_descriptor(types.CHAR(36))
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-        elif dialect.name == 'postgresql':
-            return str(value)
-
-        if not isinstance(value, uuid.UUID):
-            return str(uuid.UUID(value))
-
-        return str(value)
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return value
-
-        return uuid.UUID(value)
+from newtonian import custom_types as ct
 
 
 class NewtonianBase(object):
-    uuid = sa.Column(UUID, primary_key=True, default=lambda: uuid.uuid4())
+    uuid = sa.Column(ct.UUID, primary_key=True,
+                     default=lambda: uuid.uuid4())
     created_at = sa.Column(sa.DateTime, default=datetime.datetime.utcnow)
     updated_at = sa.Column(sa.DateTime, default=datetime.datetime.utcnow,
                            onupdate=datetime.datetime.now)
@@ -125,7 +35,7 @@ Base = declarative.declarative_base(cls=NewtonianBase)
 
 
 def ForeignKey(where, nullable=False):
-    return sa.Column(UUID, sa.ForeignKey(where), nullable=nullable)
+    return sa.Column(ct.UUID, sa.ForeignKey(where), nullable=nullable)
 
 
 class IsHazTenant(object):
@@ -176,17 +86,35 @@ class IsHazTags(object):
 
 class MetaIp(Base):
     subnet_uuid = ForeignKey("subnets.uuid")
-    ip = sa.Column(INET)
+    ip = sa.Column(ct.INET)
+
+
+class PortState(ct.DeclEnum):
+    up = ('U', "Up")
+    down = ('D', "Down")
+
+
+class NetworkState(ct.DeclEnum):
+    up = ('U', "Up")
+    down = ('D', "Down")
+
+
+class Route(Base, IsHazTags):
+    subnet_uuid = ForeignKey("subnets.uuid")
+    subnet = orm.relationship("Subnet", backref="routes")
+
+    address = sa.Column(ct.INET, nullable=False)
+    prefix = sa.Column(sa.Integer, nullable=False)
+    next_hop = sa.Column(ct.INET, nullable=False)
 
 
 class Subnet(Base, IsHazTenant, IsHazTags):
     network_uuid = ForeignKey("networks.uuid")
     network = orm.relationship("Network", backref="subnets")
-    address = sa.Column(INET, nullable=False)
+    address = sa.Column(ct.INET, nullable=False)
     prefix = sa.Column(sa.Integer, nullable=False)
     dns = orm.relationship("MetaIp", backref=orm.backref("subnet",
                                                          uselist=False))
-    gateway = sa.Column(INET)
     unique = sa.Column(sa.Boolean, default=False)
 
     @property
@@ -206,13 +134,13 @@ class Ip(Base, IsHazTenant, IsHazTags):
     port_uuid = ForeignKey("ports.uuid", nullable=True)
     port = orm.relationship("Port", backref="ips")
 
-    address = sa.Column(INET, nullable=False)
+    address = sa.Column(ct.INET, nullable=False)
 
 
 class MacPool(Base):
     network_uuid = ForeignKey("networks.uuid", nullable=True)
     network = orm.relationship("Network", backref="mac_pools")
-    address = sa.Column(MAC, nullable=False)
+    address = sa.Column(ct.MAC, nullable=False)
     prefix = sa.Column(sa.Integer, nullable=False)
 
 
@@ -220,7 +148,7 @@ class Mac(Base):
     port_uuid = ForeignKey("ports.uuid")
     port = orm.relationship("Port", userlist=False, backref="mac")
 
-    address = sa.Column(MAC, nullable=False)
+    address = sa.Column(ct.MAC, nullable=False)
 
 
 class Port(Base, IsHazTenant, IsHazTags):
@@ -228,7 +156,9 @@ class Port(Base, IsHazTenant, IsHazTags):
     network = orm.relationship("Network", backref="ports")
 
     device_id = sa.Column(sa.String(255), nullable=False)
+    state = sa.Column(PortState.db_type())
 
 
 class Network(Base):
     name = sa.Column(sa.String(255), nullable=False)
+    state = sa.Column(NetworkState.db_type())
