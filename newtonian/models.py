@@ -34,9 +34,6 @@ class INET(types.TypeDecorator):
         if value.version == 4:
             value = value.ipv6()
 
-        if dialect.name == 'postgresql':
-            return str(value)
-
         return str(value)
 
     def process_result_value(self, value, dialect):
@@ -47,6 +44,35 @@ class INET(types.TypeDecorator):
 
         if value.is_ipv4_mapped():
             return value.ipv4()
+
+        return value
+
+
+class MAC(types.TypeDecorator):
+    impl = types.CHAR
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(postgresql.MACADDR())
+
+        return dialect.type_descriptor(types.CHAR(16))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+
+        if not isinstance(value, netaddr.EUI):
+                value = netaddr.EUI(value)
+
+        value.dialect = netaddr.mac_unix
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+
+        value = netaddr.EUI(value)
+        value.dialect = netaddr.mac_unix
 
         return value
 
@@ -173,7 +199,6 @@ class Subnet(Base, IsHazTenant, IsHazTags):
 
 
 class Ip(Base, IsHazTenant, IsHazTags):
-    __tablename__ = "ip_addresses"
     __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
 
     subnet_uuid = ForeignKey("subnets.uuid")
@@ -184,12 +209,12 @@ class Ip(Base, IsHazTenant, IsHazTags):
     address = sa.Column(INET, nullable=False)
 
 
-class MacRange(Base):
+class MacPool(Base):
     pass
 
 
-class MacAddress(Base):
-    __tablename__ = "mac_addresses"
+class Mac(Base):
+    pass
 
 
 class Port(Base):
