@@ -137,6 +137,14 @@ class Ip(Base, IsHazTenant, IsHazTags):
     address = sa.Column(ct.INET, nullable=False)
 
 
+class AllocatableIp(Base):
+    __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
+    subnet_uuid = ForeignKey("subnets.uuid")
+    subnet = orm.relationship("Subnet", backref="allocatable_ips")
+
+    address = sa.Column(ct.INET, nullable=False)
+
+
 class MacPool(Base):
     network_uuid = ForeignKey("networks.uuid", nullable=True)
     network = orm.relationship("Network", backref="mac_pools")
@@ -151,14 +159,29 @@ class Mac(Base):
     address = sa.Column(ct.MAC, nullable=False)
 
 
+class AllocatableMac(Base):
+    __table_args__ = (sa.UniqueConstraint("address", "network_uuid"),)
+
+    network_uuid = ForeignKey("networks.uuid")
+    network = orm.relationship("Network",
+                               backref=orm.backref("allocatable_macs",
+                                                   lazy="dynamic"))
+
+    address = sa.Column(ct.INET, nullable=False)
+
+
 class Port(Base, IsHazTenant, IsHazTags):
+    __table_args__ = (sa.UniqueConstraint("address", "network_uuid"),)
+
     network_uuid = ForeignKey("networks.uuid", nullable=True)
-    network = orm.relationship("Network", backref="ports")
+    network = orm.relationship("Network",
+                               backref=orm.backref("ports",
+                                                   lazy="dynamic"))
 
     device_id = sa.Column(sa.String(255), nullable=False)
     state = sa.Column(PortState.db_type())
 
 
-class Network(Base):
+class Network(Base, IsHazTenant, IsHazTags):
     name = sa.Column(sa.String(255), nullable=False)
     state = sa.Column(NetworkState.db_type())
