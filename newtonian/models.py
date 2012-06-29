@@ -126,6 +126,15 @@ class Subnet(Base, IsHazTenant, IsHazTags):
         return self.address.version
 
 
+class AllocatableIp(Base):
+    __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
+    subnet_uuid = ForeignKey("subnets.uuid")
+    subnet = orm.relationship("Subnet", backref="allocatable_ips")
+
+    address = sa.Column(ct.INET, nullable=False)
+    available = sa.Column(sa.Boolean, default=False)
+
+
 class Ip(Base, IsHazTenant, IsHazTags):
     __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
 
@@ -136,13 +145,14 @@ class Ip(Base, IsHazTenant, IsHazTags):
 
     address = sa.Column(ct.INET, nullable=False)
 
+    def deallocate(self, session=None):
+        session = orm.session.object_session(self)
 
-class AllocatableIp(Base):
-    __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
-    subnet_uuid = ForeignKey("subnets.uuid")
-    subnet = orm.relationship("Subnet", backref="allocatable_ips")
-
-    address = sa.Column(ct.INET, nullable=False)
+        allocatable_ip = AllocatableIp(subnet_uuid=self.subnet_uuid,
+                                       address=self.address)
+        session.add(allocatable_ip)
+        session.delete(self)
+        return allocatable_ip
 
 
 class MacPool(Base):
@@ -152,22 +162,38 @@ class MacPool(Base):
     prefix = sa.Column(sa.Integer, nullable=False)
 
 
-class Mac(Base):
-    port_uuid = ForeignKey("ports.uuid")
-    port = orm.relationship("Port", userlist=False, backref="mac")
-
-    address = sa.Column(ct.MAC, nullable=False)
-
-
 class AllocatableMac(Base):
     __table_args__ = (sa.UniqueConstraint("address", "network_uuid"),)
 
-    network_uuid = ForeignKey("networks.uuid")
+    network_uuid = ForeignKey("networks.uuid", nullable=True)
     network = orm.relationship("Network",
                                backref=orm.backref("allocatable_macs",
                                                    lazy="dynamic"))
 
     address = sa.Column(ct.INET, nullable=False)
+    available = sa.Column(sa.Boolean, default=False)
+
+
+class Mac(Base):
+    pool_uuid = ForeignKey("macpools.uuid")
+    pool = orm.relationship("MacPool", backref="macs")
+    port_uuid = ForeignKey("ports.uuid")
+    port = orm.relationship("Port", userlist=False, backref="mac")
+
+    address = sa.Column(ct.MAC, nullable=False)
+
+    def deallocate(self):
+        session = orm.session.object_session(self)
+
+        kwargs = {"address": self.address}
+
+        if self.pool.network_uuid is not None:
+            kwargs["network_uuid"] = self.pool.network_uuid
+
+        allocatable_mac = AllocatableMac(**kwargs)
+        session.add(allocatable_mac)
+        session.delete(self)
+        return allocatable_mac
 
 
 class Port(Base, IsHazTenant, IsHazTags):
