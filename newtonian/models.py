@@ -98,6 +98,10 @@ class NewtonianBase(object):
 Base = declarative.declarative_base(cls=NewtonianBase)
 
 
+def ForeignKey(where, nullable=False):
+    return sa.Column(UUID, sa.ForeignKey(where), nullable=nullable)
+
+
 class IsHazTenant(object):
     """Teanant mixin to magically support the tenant_id"""
     # NOTE(jkoelker) tenant_id is just a free form string ;(
@@ -105,9 +109,7 @@ class IsHazTenant(object):
 
 
 class Tag(Base):
-    association_uuid = sa.Column(UUID,
-                                 sa.ForeignKey("tag_association.uuid"),
-                                 nullable=False)
+    association_uuid = ForeignKey("tag_association.uuid")
     tag = sa.Column(sa.String(255), nullable=False)
     parent = associationproxy.association_proxy("association", "parent")
     association = orm.relationship("TagAssociation",
@@ -133,10 +135,7 @@ class TagAssociation(Base):
 
 
 class IsHazTags(object):
-    @declarative.declared_attr
-    def tag_association_uuid(cls):
-        return sa.Column(UUID, sa.ForeignKey("tag_association.uuid"),
-                         nullalble=False)
+    tag_association_uuid = ForeignKey("tag_association.uuid")
 
     @declarative.declared_attr
     def tag_association(cls):
@@ -150,21 +149,19 @@ class IsHazTags(object):
 
 
 class MetaIp(Base):
-    subnet_uuid = sa.Column(UUID, sa.ForeignKey("subnets.uuid"),
-                            nullable=False)
+    subnet_uuid = ForeignKey("subnets.uuid")
     ip = sa.Column(INET)
 
 
 class Subnet(Base, IsHazTenant, IsHazTags):
-    network_uuid = sa.Column(sa.String(36), sa.ForeignKey("networks.uuid"),
-                             nullable=False)
+    network_uuid = ForeignKey("networks.uuid")
     address = sa.Column(INET, nullable=False)
     prefix = sa.Column(sa.Integer, nullable=False)
-
     dns = orm.relationship("MetaIp", backref=orm.backref("subnet",
                                                          uselist=False))
     gateway = sa.Column(INET)
     unique = sa.Column(sa.Boolean, default=False)
+    network = orm.relationship("Network", backref="subnets")
 
     @property
     def netaddr(self):
@@ -175,8 +172,16 @@ class Subnet(Base, IsHazTenant, IsHazTags):
         return self.address.version
 
 
-class IpAddress(Base):
+class Ip(Base, IsHazTenant, IsHazTags):
     __tablename__ = "ip_addresses"
+    __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
+
+    subnet_uuid = ForeignKey("subnets.uuid")
+    port_uuid = ForeignKey("ports.uuid", nullable=True)
+    subnet = orm.relationship("Subnet", backref="ips")
+    port = orm.relationship("Port", backref="ips")
+
+    address = sa.Column(INET, nullable=False)
 
 
 class MacRange(Base):
@@ -193,6 +198,3 @@ class Port(Base):
 
 class Network(Base):
     name = sa.Column(sa.String(255), nullable=False)
-    subnets = orm.relationship("Subnet",
-                               backref=orm.backref("network",
-                                                   uselist=False))
