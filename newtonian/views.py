@@ -1,7 +1,14 @@
 import cornice
 
+from newtonian import models
+from newtonian import sqla
 
-def resource(name, collection_name=None):
+
+def _get_session(request):
+    return sqla.dbsession(request)
+
+
+def _resource(name, collection_name=None):
     if collection_name is None:
         collection_name = name + 's'
     c = cornice.Service(name=collection_name, path='/%s' % collection_name)
@@ -9,13 +16,16 @@ def resource(name, collection_name=None):
     return c, r
 
 
-networks, network = resource('network')
-ports, port = resource('port')
-subnets, subnet = resource('subnet')
-routes, route = resource('route')
-ips, ip = resource('ip')
+networks, network = _resource('network')
+ports, port = _resource('port')
+subnets, subnet = _resource('subnet')
+routes, route = _resource('route')
+ips, ip = _resource('ip')
 
 
-def get_info(request):
-    """Returns Hello in JSON."""
-    return {'Hello': 'World'}
+@networks.get()
+def get_networks(request):
+    session = _get_session(request)
+
+    query = session.query(models.Network)
+    return {'networks': [n.dict() for n in query.all()]}

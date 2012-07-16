@@ -30,6 +30,29 @@ class NewtonianBase(object):
                       cls.__name__).lower()
         return name + 's'
 
+    def dict(self):
+        res = {}
+        props = sa.orm.object_mapper(self).iterate_properties
+        for prop in props:
+            if not isinstance(prop, sa.orm.ColumnProperty):
+                continue
+            key = prop.key
+            value = getattr(self, key)
+            if hasattr(value, "to_dict"):
+                value = value.to_dict()
+            elif isinstance(value, (datetime.datetime, uuid.UUID)):
+                value = str(value)
+            elif isinstance(value, list):
+                newvalue = []
+                for item in value:
+                    if hasattr(item, "to_dict"):
+                        newvalue.append(item.to_dict())
+                    else:
+                        newvalue.append(str(item))
+                value = newvalue
+            res[key] = value
+        return res
+
 
 Base = declarative.declarative_base(cls=NewtonianBase)
 
@@ -45,7 +68,10 @@ class IsHazTenant(object):
 
 
 class Tag(Base):
-    association_uuid = ForeignKey("tag_association.uuid")
+    @declarative.declared_attr
+    def association_uuid(cls):
+        return ForeignKey("tag_association.uuid")
+
     tag = sa.Column(sa.String(255), nullable=False)
     parent = associationproxy.association_proxy("association", "parent")
     association = orm.relationship("TagAssociation",
@@ -71,7 +97,9 @@ class TagAssociation(Base):
 
 
 class IsHazTags(object):
-    tag_association_uuid = ForeignKey("tag_association.uuid")
+    @declarative.declared_attr
+    def tag_association_uuid(cls):
+        return ForeignKey("tag_association.uuid", nullable=True)
 
     @declarative.declared_attr
     def tag_association(cls):
@@ -175,10 +203,14 @@ class AllocatableMac(Base):
 
 
 class Mac(Base):
-    pool_uuid = ForeignKey("macpools.uuid")
+    __table_args__ = (sa.UniqueConstraint("address", "network_uuid"),)
+
+    network_uuid = ForeignKey("networks.uuid", nullable=True)
+    network = orm.relationship("Network")
+    pool_uuid = ForeignKey("mac_pools.uuid")
     pool = orm.relationship("MacPool", backref="macs")
     port_uuid = ForeignKey("ports.uuid")
-    port = orm.relationship("Port", userlist=False, backref="mac")
+    port = orm.relationship("Port", uselist=False, backref="mac")
 
     address = sa.Column(ct.MAC, nullable=False)
 
@@ -197,8 +229,6 @@ class Mac(Base):
 
 
 class Port(Base, IsHazTenant, IsHazTags):
-    __table_args__ = (sa.UniqueConstraint("address", "network_uuid"),)
-
     network_uuid = ForeignKey("networks.uuid", nullable=True)
     network = orm.relationship("Network",
                                backref=orm.backref("ports",
