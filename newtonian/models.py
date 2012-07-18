@@ -1,5 +1,6 @@
 
 import datetime
+import logging
 import re
 import uuid
 
@@ -13,6 +14,9 @@ from sqlalchemy.ext import declarative
 from newtonian import custom_types as ct
 
 
+log = logging.getLogger(__name__)
+
+
 class NewtonianBase(object):
     uuid = sa.Column(ct.UUID, primary_key=True,
                      default=lambda: uuid.uuid4())
@@ -22,15 +26,21 @@ class NewtonianBase(object):
 
     @declarative.declared_attr
     def __tablename__(cls):
-        # NOTE(jkoelker) Pluralize the unCamelCased version of the class.
-        #                Subclasses can still define __tablename__ to
-        #                override. Adapted from Kotti.util
-        name = re.sub(r"((?<=[a-z])[A-Z]|(?<!\A)[A-Z](?=[a-z]))",
-                      r"_\1",
-                      cls.__name__).lower()
-        return name + 's'
+        return cls.__collection_name__
 
-    def dict(self):
+    @declarative.declared_attr
+    def __display_name__(cls):
+        return  re.sub(r"((?<=[a-z])[A-Z]|(?<!\A)[A-Z](?=[a-z]))",
+                       r"_\1", cls.__name__).lower()
+
+    @declarative.declared_attr
+    def __collection_name__(cls):
+        # NOTE(jkoelker) Pluralize the unCamelCased version of the class.
+        #                Subclasses can still define __collect_name__ to
+        #                override. Adapted from Kotti.util
+        return cls.__display_name__ + 's'
+
+    def dictify(self, revisit=False, expand=None):
         res = {}
         props = sa.orm.object_mapper(self).iterate_properties
         for prop in props:
@@ -38,15 +48,15 @@ class NewtonianBase(object):
                 continue
             key = prop.key
             value = getattr(self, key)
-            if hasattr(value, "to_dict"):
-                value = value.to_dict()
+            if hasattr(value, "dict"):
+                value = value.dict()
             elif isinstance(value, (datetime.datetime, uuid.UUID)):
                 value = str(value)
             elif isinstance(value, list):
                 newvalue = []
                 for item in value:
-                    if hasattr(item, "to_dict"):
-                        newvalue.append(item.to_dict())
+                    if hasattr(item, "dict"):
+                        newvalue.append(item.dict())
                     else:
                         newvalue.append(str(item))
                 value = newvalue
@@ -55,6 +65,21 @@ class NewtonianBase(object):
 
 
 Base = declarative.declarative_base(cls=NewtonianBase)
+
+
+def _default_list_getset(collection_class, proxy):
+    attr = proxy.value_attr
+
+    def getter(obj):
+        if obj:
+            return getattr(obj, attr, None)
+        return []
+
+    if collection_class is dict:
+        setter = lambda o, k, v: setattr(o, attr, v)
+    else:
+        setter = lambda o, v: setattr(o, attr, v)
+    return getter, setter
 
 
 def ForeignKey(where, nullable=False):
@@ -68,9 +93,7 @@ class IsHazTenant(object):
 
 
 class Tag(Base):
-    @declarative.declared_attr
-    def association_uuid(cls):
-        return ForeignKey("tag_association.uuid")
+    association_uuid = ForeignKey("tag_association.uuid")
 
     tag = sa.Column(sa.String(255), nullable=False)
     parent = associationproxy.association_proxy("association", "parent")
@@ -79,7 +102,7 @@ class Tag(Base):
 
 
 class TagAssociation(Base):
-    __tablename__ = "tag_association"
+    __collection_name__ = "tag_association"
 
     discriminator = sa.Column(sa.String)
     tags = associationproxy.association_proxy("tags_association", "tag",
@@ -105,9 +128,10 @@ class IsHazTags(object):
     def tag_association(cls):
         discriminator = cls.__name__.lower()
         creator = TagAssociation.creator(discriminator)
+        kwargs = {'creator': creator,
+                  'getset_factory': _default_list_getset}
         cls.tags = associationproxy.association_proxy("tag_association",
-                                                      "tags",
-                                                      creator=creator)
+                                                      "tags", **kwargs)
         backref = orm.backref("%s_parent" % discriminator, uselist=False)
         return orm.relationship("TagAssociation", backref=backref)
 
@@ -241,3 +265,6 @@ class Port(Base, IsHazTenant, IsHazTags):
 class Network(Base, IsHazTenant, IsHazTags):
     name = sa.Column(sa.String(255), nullable=False)
     state = sa.Column(NetworkState.db_type())
+    key = sa.Column(sa.String(255))
+    parent_uuid = ForeignKey("networks.uuid", nullable=True)
+    children = orm.relationship("Network", lazy="joined", join_depth=2)
