@@ -12,6 +12,7 @@ install_requires = ["cornice",
                     "PasteScript",
                     "zope.sqlalchemy",
                     "sqlalchemy>=0.7",
+                    "colanderalchemy",
                     "pyramid_tm",
                     "netaddr"]
 

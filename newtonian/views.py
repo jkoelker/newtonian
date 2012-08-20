@@ -1,29 +1,16 @@
 import cornice
 from pyramid import httpexceptions as httpexc
-from pyramid import response
 from pyramid import view
 
 from newtonian import models
 from newtonian import sqla
 
 
-class JSONException(httpexc.HTTPError):
-    def __init__(self, exc):
-        body = {'status': 'error', 'errors': errors}
-        response.Response.__init__(self, json.dumps(body, use_decimal=True))
-        self.status = status
-        self.content_type = 'application/json'
-
-#class HTTPExceptionRenderer(object):
-#        def __call__(self, info):
-#            def _render(value, system):
-
-
-#@view.view_config(context=httpexc.WSGIHTTPException,
-#                  renderer=HTTPExceptionRenderer)
-#def _format_exception(exc, request):
-#    return {'code': exc.code, 'title': exc.title,
-#            'explanation': exc.explanation}
+@view.view_config(context=httpexc.WSGIHTTPException)
+def _format_exception(exc, request):
+    request.response_status = exc.status
+    return {'code': exc.code, 'title': exc.title,
+            'explanation': exc.explanation, 'detail': exc.detail}
 
 
 def _get_session(request):
@@ -53,6 +40,7 @@ class Collection(Resource):
     def __init__(self, model):
         self.model = model
         super(Collection, self).__init__()
+
 
 def _object(obj, collection=False):
     value = obj.dictify()

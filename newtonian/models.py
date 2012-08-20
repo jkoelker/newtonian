@@ -30,8 +30,8 @@ class NewtonianBase(object):
 
     @declarative.declared_attr
     def __display_name__(cls):
-        return  re.sub(r"((?<=[a-z])[A-Z]|(?<!\A)[A-Z](?=[a-z]))",
-                       r"_\1", cls.__name__).lower()
+        return re.sub(r"((?<=[a-z])[A-Z]|(?<!\A)[A-Z](?=[a-z]))",
+                      r"_\1", cls.__name__).lower()
 
     @declarative.declared_attr
     def __collection_name__(cls):
@@ -40,6 +40,11 @@ class NewtonianBase(object):
         #                override. Adapted from Kotti.util
         return cls.__display_name__ + 's'
 
+    @property
+    def __name__(self):
+        return str(self.uuid)
+
+    # TODO(jkoelker) This needs to be fixed
     def dictify(self, revisit=False, expand=None):
         res = {}
         props = sa.orm.object_mapper(self).iterate_properties
@@ -168,6 +173,7 @@ class Subnet(Base, IsHazTenant, IsHazTags):
     dns = orm.relationship("MetaIp", backref=orm.backref("subnet",
                                                          uselist=False))
     unique = sa.Column(sa.Boolean, default=False)
+    active = sa.Column(sa.Boolean, default=True)
 
     @property
     def netaddr(self):
