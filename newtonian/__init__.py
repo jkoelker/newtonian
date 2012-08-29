@@ -17,7 +17,7 @@ def main(global_config, **settings):
 
     config.include("cornice")
     config.scan("newtonian.views")
-    config.add_renderer(None, renderers.Newtonian())
+#    config.add_renderer(None, renderers.Newtonian())
 
     # NOTE(jkoelker) Ghetto db creation, fixit, fixit, fixit, fixit
     s = config.registry.settings

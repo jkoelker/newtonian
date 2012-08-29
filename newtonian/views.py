@@ -32,16 +32,6 @@ routes, route = _resource('route')
 ips, ip = _resource('ip')
 
 
-class Resource(dict):
-    pass
-
-
-class Collection(Resource):
-    def __init__(self, model):
-        self.model = model
-        super(Collection, self).__init__()
-
-
 def _object(obj, collection=False):
     value = obj.dictify()
     if collection:

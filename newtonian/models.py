@@ -156,13 +156,21 @@ class NetworkState(ct.DeclEnum):
     down = ('D', "Down")
 
 
-class Route(Base, IsHazTags):
-    subnet_uuid = ForeignKey("subnets.uuid")
-    subnet = orm.relationship("Subnet", backref="routes")
-
+class IsHazRoute(object):
     address = sa.Column(ct.INET, nullable=False)
     prefix = sa.Column(sa.Integer, nullable=False)
     next_hop = sa.Column(ct.INET, nullable=False)
+
+
+class TemplateRoute(Base, IsHazRoute, IsHazTenant, IsHazTags):
+    network_uuid = ForeignKey("networks.uuid", nullable=True)
+    network = orm.relationship("Network")
+    device_id = sa.Column(sa.String(255))
+
+
+class SubnetRoute(Base, IsHazRoute, IsHazTags):
+    subnet_uuid = ForeignKey("subnets.uuid")
+    subnet = orm.relationship("Subnet", backref="routes")
 
 
 class Subnet(Base, IsHazTenant, IsHazTags):
@@ -174,6 +182,7 @@ class Subnet(Base, IsHazTenant, IsHazTags):
                                                          uselist=False))
     unique = sa.Column(sa.Boolean, default=False)
     active = sa.Column(sa.Boolean, default=True)
+    allow_requested_ip = sa.Column(sa.Boolean, default=True)
 
     @property
     def netaddr(self):
@@ -182,15 +191,6 @@ class Subnet(Base, IsHazTenant, IsHazTags):
     @property
     def version(self):
         return self.address.version
-
-
-class AllocatableIp(Base):
-    __table_args__ = (sa.UniqueConstraint("address", "subnet_uuid"),)
-    subnet_uuid = ForeignKey("subnets.uuid")
-    subnet = orm.relationship("Subnet", backref="allocatable_ips")
-
-    address = sa.Column(ct.INET, nullable=False)
-    available = sa.Column(sa.Boolean, default=False)
 
 
 class Ip(Base, IsHazTenant, IsHazTags):
@@ -202,15 +202,10 @@ class Ip(Base, IsHazTenant, IsHazTags):
     port = orm.relationship("Port", backref="ips")
 
     address = sa.Column(ct.INET, nullable=False)
+    deallocated_at = sa.Column(sa.DateTime)
 
-    def deallocate(self, session=None):
-        session = orm.session.object_session(self)
-
-        allocatable_ip = AllocatableIp(subnet_uuid=self.subnet_uuid,
-                                       address=self.address)
-        session.add(allocatable_ip)
-        session.delete(self)
-        return allocatable_ip
+    def deallocate(self):
+        self.deallocated_at = datetime.datetime.utcnow()
 
 
 class MacPool(Base):
@@ -218,18 +213,6 @@ class MacPool(Base):
     network = orm.relationship("Network", backref="mac_pools")
     address = sa.Column(ct.MAC, nullable=False)
     prefix = sa.Column(sa.Integer, nullable=False)
-
-
-class AllocatableMac(Base):
-    __table_args__ = (sa.UniqueConstraint("address", "network_uuid"),)
-
-    network_uuid = ForeignKey("networks.uuid", nullable=True)
-    network = orm.relationship("Network",
-                               backref=orm.backref("allocatable_macs",
-                                                   lazy="dynamic"))
-
-    address = sa.Column(ct.INET, nullable=False)
-    available = sa.Column(sa.Boolean, default=False)
 
 
 class Mac(Base):
@@ -243,19 +226,10 @@ class Mac(Base):
     port = orm.relationship("Port", uselist=False, backref="mac")
 
     address = sa.Column(ct.MAC, nullable=False)
+    deallocated_at = sa.Column(sa.DateTime)
 
     def deallocate(self):
-        session = orm.session.object_session(self)
-
-        kwargs = {"address": self.address}
-
-        if self.pool.network_uuid is not None:
-            kwargs["network_uuid"] = self.pool.network_uuid
-
-        allocatable_mac = AllocatableMac(**kwargs)
-        session.add(allocatable_mac)
-        session.delete(self)
-        return allocatable_mac
+        self.deallocated_at = datetime.datetime.utcnow()
 
 
 class Port(Base, IsHazTenant, IsHazTags):
